@@ -3,85 +3,139 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor
 
-# Page config
-st.set_page_config(page_title="Bike Demand Predictor", layout="centered")
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(page_title="Bike Demand Dashboard", layout="wide")
 
-# Title
+# ---------------- LOAD DATA ----------------
+@st.cache_data
+def load_data():
+    return pd.read_csv("day.csv")
+
+data = load_data()
+
+# ---------------- TRAIN MODEL ----------------
+@st.cache_resource
+def train_model(data):
+    X = data[['season','yr','mnth','holiday','weekday',
+              'workingday','weathersit','temp','hum','windspeed']]
+    y = data['cnt']
+
+    model = RandomForestRegressor()
+    model.fit(X, y)
+    return model
+
+model = train_model(data)
+
+# ---------------- SIDEBAR ----------------
+st.sidebar.title("🚀 Navigation")
+page = st.sidebar.radio("Go to", ["Prediction", "Analytics", "Insights"])
+
+# ---------------- HEADER ----------------
 st.title("🚴 Bike Sharing Demand Prediction")
-st.markdown("### Predict bike demand based on weather & conditions")
-
+st.markdown("Interactive ML dashboard using Streamlit")
 st.markdown("---")
 
-# Load data
-data = pd.read_csv("day.csv")
-data = data.drop(['instant','dteday','casual','registered'], axis=1)
+# ===================== PREDICTION =====================
+if page == "Prediction":
 
-X = data[['season','yr','mnth','holiday','weekday',
-          'workingday','weathersit','temp','hum','windspeed']]
-y = data['cnt']
+    st.subheader("📊 Enter Conditions")
 
-# Train model
-model = RandomForestRegressor()
-model.fit(X, y)
+    col1, col2 = st.columns(2)
 
-# ================= UI =================
+    with col1:
+        season = st.selectbox("Season", [1,2,3,4])
+        yr = st.selectbox("Year (0=2011, 1=2012)", [0,1])
+        mnth = st.slider("Month", 1, 12)
+        weekday = st.slider("Weekday", 0, 6)
 
-st.subheader("📊 Input Parameters")
+    with col2:
+        temp = st.slider("Temperature (0–1)", 0.0, 1.0)
+        hum = st.slider("Humidity (0–1)", 0.0, 1.0)
+        windspeed = st.slider("Windspeed (0–1)", 0.0, 1.0)
+        weathersit = st.selectbox("Weather Condition", [1,2,3,4])
 
-col1, col2 = st.columns(2)
-
-with col1:
-    season = st.selectbox("Season", [1,2,3,4])
-    mnth = st.slider("Month", 1, 12)
-    weekday = st.slider("Weekday", 0, 6)
+    holiday = st.selectbox("Holiday", [0,1])
     workingday = st.selectbox("Working Day", [0,1])
 
-with col2:
-    temp = st.slider("Temperature (0–1)", 0.0, 1.0)
-    hum = st.slider("Humidity (0–1)", 0.0, 1.0)
-    windspeed = st.slider("Windspeed (0–1)", 0.0, 1.0)
-    weathersit = st.selectbox("Weather Condition", [1,2,3,4])
+    st.markdown("---")
 
-yr = st.selectbox("Year (0 = 2011, 1 = 2012)", [0,1])
-holiday = st.selectbox("Holiday", [0,1])
+    if st.button("🚀 Predict Demand"):
 
-st.markdown("---")
+        input_data = [[
+            season, yr, mnth, holiday, weekday,
+            workingday, weathersit, temp, hum, windspeed
+        ]]
 
-# ================= Prediction =================
+        prediction = int(model.predict(input_data)[0])
 
-if st.button("🚀 Predict Demand"):
+        st.success(f"🎯 Predicted Bike Demand: {prediction}")
 
-    input_data = [[season, yr, mnth, holiday, weekday,
-                   workingday, weathersit, temp, hum, windspeed]]
+        # KPI Cards
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Demand", prediction)
+        c2.metric("Temperature", temp)
+        c3.metric("Humidity", hum)
 
-    prediction = int(model.predict(input_data)[0])
+        # Interpretation
+        if prediction < 2000:
+            st.warning("📉 Low demand expected")
+        elif prediction < 5000:
+            st.info("📊 Moderate demand expected")
+        else:
+            st.success("📈 High demand expected")
 
-    st.success(f"🎯 Predicted Bike Demand: {prediction}")
+# ===================== ANALYTICS =====================
+elif page == "Analytics":
 
-    # Progress bar (visual feel)
-    st.progress(min(prediction / 8000, 1.0))
+    st.subheader("📈 Data Analytics")
 
-    st.markdown("### 📌 Interpretation")
-    
-    if prediction < 2000:
-        st.warning("Low demand expected 🚶")
-    elif prediction < 5000:
-        st.info("Moderate demand 🚴")
-    else:
-        st.success("High demand 🚴‍♂️🔥")
+    # KPI cards
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Demand", int(data['cnt'].sum()))
+    c2.metric("Average Demand", int(data['cnt'].mean()))
+    c3.metric("Max Demand", int(data['cnt'].max()))
 
-# ================= Feature Importance =================
+    st.markdown("---")
 
-st.markdown("---")
-st.subheader("📈 Feature Importance")
+    # Monthly trend
+    monthly = data.groupby('mnth')['cnt'].mean()
 
-importance = model.feature_importances_
-features = X.columns
+    fig, ax = plt.subplots()
+    ax.plot(monthly.index, monthly.values, marker='o')
+    ax.set_title("Average Monthly Demand")
+    ax.set_xlabel("Month")
+    ax.set_ylabel("Demand")
 
-fig, ax = plt.subplots()
-ax.barh(features, importance)
-ax.set_xlabel("Importance")
+    st.pyplot(fig)
 
-st.pyplot(fig)
+    # Weather impact
+    weather = data.groupby('weathersit')['cnt'].mean()
 
-st.markdown("💡 Temperature and weather conditions have strong impact on bike demand.")
+    fig2, ax2 = plt.subplots()
+    ax2.bar(weather.index, weather.values)
+    ax2.set_title("Demand by Weather Condition")
+
+    st.pyplot(fig2)
+
+# ===================== INSIGHTS =====================
+elif page == "Insights":
+
+    st.subheader("🧠 Key Insights")
+
+    st.markdown("""
+### 📊 Observations:
+
+- 📈 Higher temperature leads to increased bike demand  
+- 🌧 Poor weather conditions reduce usage  
+- 📅 Working days show stable demand patterns  
+- 🔄 Seasonal changes significantly impact demand  
+
+### 🤖 Model Insight:
+Random Forest performs best as it captures complex relationships in the data.
+
+### ✅ Conclusion:
+Machine learning can effectively predict bike demand and support better resource planning.
+""")
+
+    st.markdown("---")
+    st.info("This project demonstrates real-world application of machine learning.")
